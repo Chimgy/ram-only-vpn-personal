@@ -1,0 +1,6 @@
+arm_64bit=1
+kernel=kernel8.img
+device_tree=bcm2712-rpi-5-b.dtb
+initramfs initramfs.cpio.gz followkernel
+enable_uart=1
+uart_2ndstage=1

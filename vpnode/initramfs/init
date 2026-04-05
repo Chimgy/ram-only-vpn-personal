@@ -1,0 +1,128 @@
+#!/bin/sh
+
+# initramfs/init
+# Early userspace init (runs before real OS mounts)
+# Responsibilities:
+#   1. Mount pseudo-filesystems (proc, sysfs, devtmpfs)
+#   2. Find and verify the signed OS package (rootfs.squash)
+#   3. Set up overlayfs (squashfs read-only + tmpfs read-write)
+#   4. switch_root into the verified OS
+#
+# If verification fails at any point will drop pid 1 to rescue shell for debugging (exec /bin/sh)
+# Never hand control to an unverified image
+#
+# QEMU vs Pi:
+#   Pi 5:  BOOT_DEV=/dev/mmcblk0p1
+#   QEMU:  BOOT_DEV=/dev/vda  (change and rebuild initramfs.cpio.gz)
+
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+
+log()   { echo "[init] $*" > /dev/kmsg 2>/dev/null || echo "[init] $*"; }
+panic() { log "PANIC: $*"; log "Dropping to rescue shell."; exec /bin/sh; }
+
+# STEP 1: pseudo-filesystems
+# These are kernel interfaces exposed as filesystems — no disk I/O
+# proc:     process info, kernel params (/proc/cmdline etc)
+# sysfs:    hardware device tree, block device discovery
+# devtmpfs: device nodes (/dev/mmcblk0p1 appears here)
+
+mount -t proc     none /proc && log "proc ok" || panic "proc failed"
+mount -t sysfs    none /sys  && log "sys ok"  || panic "sys failed"
+mount -t devtmpfs none /dev 2>/dev/null || mount -t tmpfs none /dev
+mdev -s
+log "dev ok"
+
+# STEP 2: find boot partition
+# Pi 5 SD card: /dev/mmcblk0p1
+# QEMU virtio:  /dev/vda  (change here + rebuild initramfs for QEMU)
+
+BOOT_DEV=/dev/mmcblk0p1
+
+# Wait for SD card controller to enumerate (Pi can be slow compared to qemu)
+n=0
+while [ ! -b "$BOOT_DEV" ]; do
+    sleep 0.5
+    n=$((n+1))
+    [ $n -gt 40 ] && panic "Boot device not found after 20s"
+done
+log "boot device found"
+
+mkdir -p /mnt/boot
+mount -o ro "$BOOT_DEV" /mnt/boot && log "boot mounted" || panic "boot mount failed"
+
+# Step 3: verify OS package
+# Two checks:
+#   3a) SHA256 of rootfs.squash matches hash in boot.json       (integrity)
+#   3b) Ed25519 signature over that hash verifies against cert  (authenticity)
+#
+# The signing cert is baked into THIS initramfs at build time
+# It never comes from the SD card
+# An attacker controlling the SD card cannot forge a valid signature
+
+SIGNING_ROOT_CERT=/etc/ospkg_signing_root.pem
+
+# 3a) Hash check
+EXPECTED_HASH=$(grep -o '"sha256": *"[^"]*"' /mnt/boot/boot.json | cut -d'"' -f4) \
+    || panic "Could not parse hash from boot.json"
+log "expected: $EXPECTED_HASH"
+
+ACTUAL_HASH=$(sha256sum /mnt/boot/rootfs.squash | cut -d' ' -f1) \
+    || panic "sha256sum failed on rootfs.squash"
+log "actual:   $ACTUAL_HASH"
+
+[ "$ACTUAL_HASH" = "$EXPECTED_HASH" ] || panic "Hash mismatch, image tampered with?"
+log "Hash verified OK"
+
+# 3b) Signature check
+SIG=$(grep -o '"sig": *"[^"]*"' /mnt/boot/boot.json | cut -d'"' -f4)
+printf '%s' "$SIG"          | base64 -d > /tmp/ospkg.sig
+printf '%s' "$ACTUAL_HASH"             > /tmp/hash.txt
+
+/bin/openssl pkeyutl -verify \
+    -inkey "$SIGNING_ROOT_CERT" -pubin \
+    -rawin -in /tmp/hash.txt \
+    -sigfile /tmp/ospkg.sig \
+    && log "Signature verified OK" || panic "Signature verification FAILED"
+
+rm -f /tmp/ospkg.sig /tmp/hash.txt
+
+# Step 4: overlay filesystem
+# squashfs (read-only, verified) -> lower layer
+# tmpfs    (read-write, RAM) -> upper layer
+# Result: OS sees a writable filesystem, but all writes go to RAM
+#         squashfs is never modified, SD card remains untouched
+#         reboot = clean slate, all runtime state gone
+
+mount -t squashfs -o loop,ro /mnt/boot/rootfs.squash /mnt/squash \
+    && log "squashfs mounted" || panic "squashfs mount failed"
+
+mount -t tmpfs -o size=256m tmpfs /mnt/overlay || panic "tmpfs failed"
+mkdir -p /mnt/overlay/upper /mnt/overlay/work
+
+mount -t overlay overlay \
+    -o lowerdir=/mnt/squash,upperdir=/mnt/overlay/upper,workdir=/mnt/overlay/work \
+    /mnt/newroot && log "overlay mounted" || panic "overlay failed"
+
+# step 5: attestation
+# Store verified hash where the running OS can read it
+# Used by attestation service to submit proof to transparency log
+# chmod 400: read-only, prevents runtime tampering
+
+mkdir -p /mnt/newroot/run/attest
+printf '%s' "$ACTUAL_HASH" > /mnt/newroot/run/attest/ospkg.sha256
+chmod 400 /mnt/newroot/run/attest/ospkg.sha256
+log "hash stored for attestation"
+
+# Step 6: switch root
+# Bind-mount proc/sys/dev so the new OS has them immediately
+# switch_root: replaces initramfs with real OS
+#   - frees initramfs memory
+#   - PID 1 becomes /sbin/init in the new root
+
+mkdir -p /mnt/newroot/proc /mnt/newroot/sys /mnt/newroot/dev
+mount --bind /proc /mnt/newroot/proc
+mount --bind /sys  /mnt/newroot/sys
+mount --bind /dev  /mnt/newroot/dev
+
+log "switching root"
+exec switch_root /mnt/newroot /sbin/init
