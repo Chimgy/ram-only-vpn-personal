@@ -7,9 +7,10 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
-	"vpnode-api/peerpool"
-	"vpnode-api/wg"
+	"n-api/peerpool"
+	"n-api/wg"
 )
 
 // ----------------------------------------------------------------
@@ -98,7 +99,7 @@ func handleAddPeer(w http.ResponseWriter, r *http.Request) {
 	// Best-effort: get LAN IP for endpoint hint
 	lanIP := os.Getenv("VPN_LAN_IP") // set this in vpn-boot.sh: export VPN_LAN_IP=$MY_IP
 	if lanIP == "" {
-		lanIP = "192.168.1.108" // fallback
+		lanIP = "192.168.1.108" // fallback while i dont have var exported on pi
 	}
 
 	log.Printf("Peer added: user=%s pubkey=%s tunnel=%s", req.UserID, req.PublicKey[:8]+"...", tunnelIP)
@@ -150,11 +151,38 @@ func handleRemovePeer(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 }
 
-// GET /peers — debug endpoint, shows active peers + pool status
+// GET /peers — debug endpoint, shows active peers + pool status 
+// Now will also show wg handshkae timestamps
 func handleListPeers(w http.ResponseWriter, r *http.Request) {
 	peers := pool.List()
+ 
+	statuses, _ := wg.ShowDump()
+	hsMap := make(map[string]time.Time)
+	for _, s := range statuses {
+		hsMap[s.PublicKey] = s.LastHandshake
+	}
+ 
+	type enrichedPeer struct {
+		PublicKey     string `json:"public_key"`
+		TunnelIP      string `json:"tunnel_ip"`
+		LastHandshake string `json:"last_handshake"`
+	}
+ 
+	enriched := make([]enrichedPeer, 0, len(peers))
+	for _, p := range peers {
+		hs := "never"
+		if t, ok := hsMap[p.PublicKey]; ok && !t.IsZero() {
+			hs = t.UTC().Format(time.RFC3339)
+		}
+		enriched = append(enriched, enrichedPeer{
+			PublicKey:     p.PublicKey,
+			TunnelIP:      p.TunnelIP.String(),
+			LastHandshake: hs,
+		})
+	}
+ 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"active":    peers,
+		"active":    enriched,
 		"available": pool.Available(),
 	})
 }
@@ -162,6 +190,61 @@ func handleListPeers(w http.ResponseWriter, r *http.Request) {
 // GET /health
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// notifyController POSTs to the controller when a peer disconnects
+// no-op if CONTROLLER_URL is not set (which it isnt right now)
+func notifyController(pubkey, reason string) {
+	controllerURL := os.Getenv("CONTROLLER_URL")
+	if controllerURL == "" {
+		return
+	}
+ 
+	body, _ := json.Marshal(map[string]string{
+		"public_key": pubkey,
+		"reason":     reason,
+	})
+ 
+	resp, err := http.Post(
+		controllerURL+"/peer/disconnected",
+		"application/json",
+		strings.NewReader(string(body)),
+	)
+	if err != nil {
+		log.Printf("controller notify failed: %v", err)
+		return
+	}
+	resp.Body.Close()
+}
+
+// startReaper polls WireGuard handshake times and reaps silent peers
+func startReaper(ttl, interval time.Duration) {
+	go func() {
+		for range time.Tick(interval) {
+			statuses, err := wg.ShowDump()
+			if err != nil {
+				log.Printf("reaper: wg dump failed: %v", err)
+				continue
+			}
+ 
+			now := time.Now()
+			for _, s := range statuses {
+				dead := s.LastHandshake.IsZero() || now.Sub(s.LastHandshake) > ttl
+				if !dead {
+					continue
+				}
+ 
+				log.Printf("reaper: reaping %s (last handshake: %v)", s.PublicKey[:8]+"...", s.LastHandshake)
+ 
+				if err := wg.RemovePeer(s.PublicKey); err != nil {
+					log.Printf("reaper: remove failed: %v", err)
+				}
+				pool.Release(s.PublicKey)
+				go notifyController(s.PublicKey, "timeout")
+			}
+		}
+	}()
+	log.Printf("reaper started:	ttl=%v poll=%v", ttl, interval)
 }
 
 func main() {
@@ -172,21 +255,25 @@ func main() {
 		log.Fatalf("Failed to init peer pool: %v", err)
 	}
 
+	// reap peers silent for 3 minutes, check every 30 seconds
+	startReaper(3*time.Minute, 30*time.Second)
+
 	port := os.Getenv("API_PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-http.HandleFunc("/peer", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {		
-	switch r.Method {
-		case http.MethodPost:
-			handleAddPeer(w, r)
-		case http.MethodDelete:
-			handleRemovePeer(w, r)
-		default:
-			writeError(w, http.StatusMethodNotAllowed, "POST or DELETE only")
+	http.HandleFunc("/peer", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+			case http.MethodPost:
+				handleAddPeer(w, r)
+			case http.MethodDelete:
+				handleRemovePeer(w, r)
+			default:
+				writeError(w, http.StatusMethodNotAllowed, "POST or DELETE only")
 		}
 	}))
+
 	http.HandleFunc("/peers", corsMiddleware(handleListPeers))
 	http.HandleFunc("/health", corsMiddleware(handleHealth))
 

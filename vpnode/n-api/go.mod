@@ -1,3 +1,3 @@
-module vpnode-api
+module n-api
  
 go 1.21

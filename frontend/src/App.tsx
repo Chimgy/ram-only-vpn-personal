@@ -23,8 +23,11 @@ export default function App() {
   const [copyLabel, setCopyLabel] = useState('Copy ID')
   const [copyConfLabel, setCopyConfLabel] = useState('Copy Config')
   const [wgConfig, setWgConfig] = useState<WgConfig | null>(null)
+  const [disconnectStatus, setDisconnectStatus] = useState<Status | null>(null)
+  const [activePubkey, setActivePubkey] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const pubkeyRef = useRef<HTMLTextAreaElement>(null)
+  const disconnectRef = useRef<HTMLTextAreaElement>(null)
 
   function showStatus(msg: string, error = false) {
     setStatus({ msg, error })
@@ -84,10 +87,37 @@ Address = ${data.tunnel_ip}/24
 PublicKey = ${data.server_pubkey}
 Endpoint = ${data.server_endpoint}
 AllowedIPs = 0.0.0.0/0`
+      setActivePubkey(pubkey)
       setWgConfig({ conf, tunnelIp: data.tunnel_ip })
+      setDisconnectStatus(null)
       goTo('config')
     } catch {
       showStatus('Could not reach VPN node — is it online?', true)
+    }
+  }
+
+  async function handleDisconnect() {
+    const pubkey = disconnectRef.current?.value.trim() ?? ''
+    if (!pubkey) {
+      setDisconnectStatus({ msg: 'Public key required.', error: true })
+      return
+    }
+    setDisconnectStatus({ msg: 'Disconnecting…', error: false })
+    try {
+      const res = await fetch(`${VPN_API}/peer`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ public_key: pubkey }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setDisconnectStatus({ msg: data.error ?? 'Request failed.', error: true })
+        return
+      }
+      setDisconnectStatus({ msg: 'Disconnected.', error: false })
+      setWgConfig(null)
+    } catch {
+      setDisconnectStatus({ msg: 'Could not reach VPN node — is it online?', error: true })
     }
   }
 
@@ -193,6 +223,25 @@ AllowedIPs = 0.0.0.0/0`
           <p className="hint" style={{ color: 'var(--text)' }}>
             Keep your private key secret — never share or paste it here.
           </p>
+          <div className="divider" />
+          <p className="subtitle" style={{ alignSelf: 'flex-start' }}>Disconnect</p>
+          <div className="form">
+            <textarea
+              ref={disconnectRef}
+              className="pubkey-input"
+              rows={2}
+              defaultValue={activePubkey}
+              placeholder="Paste the public key to disconnect"
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <button className="btn-danger" onClick={handleDisconnect}>Disconnect</button>
+          </div>
+          {disconnectStatus && (
+            <p className={`status ${disconnectStatus.error ? 'error' : 'info'}`}>
+              {disconnectStatus.msg}
+            </p>
+          )}
           <button className="btn-ghost" onClick={() => goTo('connect')}>
             ← Done
           </button>
