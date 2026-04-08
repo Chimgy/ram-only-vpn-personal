@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "Nunito";
+  font-style: normal;
+  font-weight: 400;
+  src: local(""), url("assets/fonts/nunito-v16-latin-regular.woff2") format("woff2");
+}
+
+body {
+  font-family: "Nunito", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* CSS vars set directly by JS — no React re-renders on mouse move */
+.app-root {
+  --cx: -9999px;
+  --cy: -9999px;
+}
+
+/* Cursor spotlight — browser repaints this cheaply when vars change */
+.cursor-spotlight {
+  background: radial-gradient(
+    380px circle at var(--cx) var(--cy),
+    rgba(99, 102, 241, 0.09),
+    transparent 70%
+  );
+  will-change: background;
+}
+
+/* Map lens — clip-path using CSS vars */
+.map-lens {
+  clip-path: circle(150px at var(--cx) var(--cy));
+  will-change: clip-path;
+}
+
+/* ── Background blobs ─────────────────────────────────────────── */
+.blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.14;
+  animation: blob-morph 14s ease-in-out infinite;
+}
+
+.blob-1 {
+  width: 480px;
+  height: 480px;
+  background: #4f46e5;
+  top: -100px;
+  left: -80px;
+  animation-delay: 0s;
+}
+
+.blob-2 {
+  width: 380px;
+  height: 380px;
+  background: #7c3aed;
+  bottom: -60px;
+  right: -60px;
+  animation-delay: -7s;
+}
+
+@keyframes blob-morph {
+  0%   { transform: translate(0px,   0px)  scale(1);    border-radius: 50%; }
+  33%  { transform: translate(25px, -35px) scale(1.06); border-radius: 58% 42% 54% 46%; }
+  66%  { transform: translate(-15px, 25px) scale(0.96); border-radius: 44% 56% 42% 58%; }
+  100% { transform: translate(0px,   0px)  scale(1);    border-radius: 50%; }
+}
