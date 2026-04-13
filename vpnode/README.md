@@ -1,6 +1,6 @@
 # vpnode — RAM-Only VPN Server
 
-A verified, RAM-only WireGuard VPN server for Raspberry Pi 5. (this readme is ai generated ngl will update later)
+A verified, RAM-only WireGuard VPN server for Raspberry Pi 5.
 
 Every boot:
 - OS image is cryptographically verified (SHA256 + Ed25519) before mounting
