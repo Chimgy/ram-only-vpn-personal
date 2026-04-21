@@ -1,92 +1,7 @@
 # ── Private keys - NEVER commit ──────────────────────────────────
-signing.key
-*.key
-!signing.pub
-!keys/*.pub
-
-# ── Generated build artifacts ────────────────────────────────────
-rootfs.squash
-boot.img
-boot.json
-hash.txt
-signature.bin
-initramfs.cpio.gz
-
-# ── Large downloadable/rebuildable sources ───────────────────────
-linux/
-busybox-*/
-openssl-*/
-alpine-make-rootfs
-*.tar
-*.tar.gz
-*.tar.bz2
-
-# ── Rootfs - keep only our custom files ──────────────────────────
-rootfs/bin/
-rootfs/dev/
-rootfs/home/
-rootfs/lib/
-rootfs/media/
-rootfs/mnt/
-rootfs/opt/
-rootfs/proc/
-rootfs/root/
-rootfs/run/
-rootfs/sbin/
-rootfs/srv/
-rootfs/sys/
-rootfs/tmp/
-rootfs/usr/
-rootfs/var/
-rootfs/etc/alpine-release
-rootfs/etc/apk/
-rootfs/etc/bash/
-rootfs/etc/busybox-paths.d/
-rootfs/etc/crontabs/
-rootfs/etc/ethertypes
-rootfs/etc/fstab
-rootfs/etc/group
-rootfs/etc/group-
-rootfs/etc/hostname
-rootfs/etc/hosts
-rootfs/etc/inputrc
-rootfs/etc/issue
-rootfs/etc/logrotate.d/
-rootfs/etc/modprobe.d/
-rootfs/etc/modules
-rootfs/etc/modules-load.d/
-rootfs/etc/motd
-rootfs/etc/mtab
-rootfs/etc/network/
-rootfs/etc/nsswitch.conf
-rootfs/etc/opt/
-rootfs/etc/os-release
-rootfs/etc/passwd
-rootfs/etc/passwd-
-rootfs/etc/periodic/
-rootfs/etc/profile
-rootfs/etc/profile.d/
-rootfs/etc/protocols
-rootfs/etc/resolvconf.conf
-rootfs/etc/resolv.conf
-rootfs/etc/secfixes.d/
-rootfs/etc/securetty
-rootfs/etc/services
-rootfs/etc/shadow
-rootfs/etc/shadow-
-rootfs/etc/shells
-rootfs/etc/ssl/
-rootfs/etc/ssl1.1/
-rootfs/etc/sysctl.conf
-rootfs/etc/sysctl.d/
-rootfs/etc/terminfo/
-rootfs/etc/udhcpc/
-rootfs/etc/wireguard/
-rootfs/etc/ssh/ssh_host_*
-rootfs/etc/ssh/moduli
-rootfs/etc/ssh/ssh_config
-rootfs/etc/ssh/ssh_config.d/
-rootfs/etc/ssh/sshd_config.d/
+keys/
+# public but still ignore it:
+initramfs/etc/ospkg_signing_root.pem
 
 # ── Pi flash - keep only config files ────────────────────────────
 pi-flash/kernel8.img
@@ -95,17 +10,6 @@ pi-flash/boot.json
 pi-flash/initramfs.cpio.gz
 pi-flash/bcm2712-rpi-5-b.dtb
 
-# ── Initramfs binaries - large, architecture specific ────────────
-initramfs/bin/busybox
-initramfs/bin/openssl
-initramfs/lib/
-initramfs/usr/
-
 # ── Misc ─────────────────────────────────────────────────────────
 *.save
-autom4te.cache/
-scripts/
-mint-client.conf
-keys/server.pub
-keys/mint-client.pub
-rootfs/.dockerenv
+

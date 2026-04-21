@@ -15,7 +15,7 @@ QEMU_MODE=0
 [ "$1" = "--qemu" ] && QEMU_MODE=1
 
 echo "==> Building squashfs..."
-sudo mksquashfs rootfs/ rootfs.squash -comp zstd -noappend
+sudo mksquashfs rootfs/ pi-flash/rootfs.squash -comp zstd -noappend
 
 echo "==> Signing..."
 HASH=$(sha256sum rootfs.squash | cut -d' ' -f1)
@@ -24,7 +24,7 @@ SIG=$(openssl pkeyutl -sign -inkey keys/signing.key -rawin -in /tmp/hash.bin | b
 rm /tmp/hash.bin
 
 echo "==> Writing boot.json..."
-cat > boot.json << JSONEOF
+cat > pi-flash/boot.json << JSONEOF
 {
   "version": 1,
   "ospkg": {
@@ -39,9 +39,6 @@ cat > boot.json << JSONEOF
   ]
 }
 JSONEOF
-
-echo "==> Updating pi-flash/..."
-sudo cp rootfs.squash boot.json pi-flash/
 
 # QEMU 
 # Updates boot.img for testing without real Pi hardware
