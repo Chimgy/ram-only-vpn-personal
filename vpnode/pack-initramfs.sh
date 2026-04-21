@@ -2,8 +2,8 @@
 set -e
 
 # pack-initramfs.sh
-# Packs initramfs/ into initramfs.cpio.gz and copies to pi-flash/
-#
+# Packs initramfs/ into initramfs.cpio.gz puts it in pi-flash/
+
 # Run after any changes to initramfs/ (e.g. after keygen.sh)
 #
 # Usage:

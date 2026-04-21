@@ -91,16 +91,29 @@ echo 1 > /proc/sys/net/ipv4/ip_forward
 log "NAT configured"
 
 # Step 6: Run the n-api go file that will handle dynamic connections
-export VPN_LAN_IP=$MY_IP  # needed in n-api (changes rn because im using dyn lan ip)
+export VPN_LAN_IP=$MY_IP  # still needed for ssh
+export NODE_API_KEY=<some-secret-you-set>  # THIS IS AN IMPORTANT LINE LOL
 /usr/local/bin/n-api &
 
 # Step 6: SSH
 # SSH host keys are baked into rootfs.squash at build time
 # Allows remote management over LAN (not through VPN tunnel)
-# Credentials: root / vpnprototype
-# To reiterate ssh will not be involved in prod as it is a massive vulnerabiltiy surface
+# Credentials: root / testpassword
 
 log "Starting SSH..."
+
+# 1. Create the privilege separation directory (Critical for OpenSSH)
+mkdir -p /var/run/sshd
+chmod 0755 /var/run/sshd
+
+# 2. Ensure devpts is mounted for terminal access
+mkdir -p /dev/pts
+mount -t devpts devpts /dev/pts 2>/dev/null || log "devpts already mounted"
+
+# 3. Start SSH with debug flags if you want to see why it fails in logs
+log "Starting SSH..."
+/usr/sbin/sshd && log "SSH ready — ssh root@$MY_IP" || log "WARNING: SSH failed to start"
+
 /usr/sbin/sshd \
     && log "SSH ready — ssh root@$MY_IP" \
     || log "WARNING: SSH failed to start"

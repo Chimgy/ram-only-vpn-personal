@@ -80,8 +80,19 @@ echo ""
 echo "==> Packing initramfs..."
 ./pack-initramfs.sh
 
-# 5 Rootfs
+# 5 Set up ssh (kinda optional but honestly you want this until you know you dont)
+# ssh not working? dont worry:
+# cat vpnode/rootfs/etc/ssh/sshd_config
+# 		if "PermitRootLogin yes" & and "PasswordAuthentication yes" arent at the bottom add them with the following:
+# echo "PermitRootLogin yes" >> vpnode/rootfs/etc/ssh/sshd_config
+# echo "PasswordAuthentication yes" >> vpnode/rootfs/etc/ssh/sshd_config
 
+
+echo ""
+echo "==> Setting root SSH password..."
+./setup-ssh.sh
+
+# 6 Rootfs
 echo ""
 echo "==> Building and signing rootfs..."
 ./rebuild.sh
