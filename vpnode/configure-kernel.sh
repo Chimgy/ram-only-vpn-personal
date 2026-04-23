@@ -32,10 +32,10 @@ echo "==> Applying kernel config for noram-vpn..."
 # Virtio drivers (QEMU only)
 # Not needed on real Pi hardware
 # Allows testing in QEMU with same kernel
-# ./scripts/config --enable CONFIG_VIRTIO_BLK
-# ./scripts/config --enable CONFIG_VIRTIO_PCI
-# ./scripts/config --enable CONFIG_VIRTIO_MMIO
-# ./scripts/config --enable CONFIG_VIRTIO_NET
+./scripts/config --enable CONFIG_VIRTIO_BLK
+./scripts/config --enable CONFIG_VIRTIO_PCI
+./scripts/config --enable CONFIG_VIRTIO_MMIO
+./scripts/config --enable CONFIG_VIRTIO_NET
 
 # WireGuard
 # IPV6 must be =y not =m — if =m it forces WireGuard to =m too
@@ -95,6 +95,8 @@ FAIL=0
 for cfg in \
     CONFIG_OVERLAY_FS \
     CONFIG_SQUASHFS \
+    CONFIG_VIRTIO_BLK \
+    CONFIG_VIRTIO_NET \
     CONFIG_IPV6 \
     CONFIG_WIREGUARD \
     CONFIG_NF_CONNTRACK \

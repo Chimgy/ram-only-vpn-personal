@@ -1,0 +1,10 @@
+alpine-baselayout
+alpine-keys
+alpine-release
+apk-tools
+busybox
+iptables
+libc-utils
+openssh
+openssl
+wireguard-tools

@@ -15,10 +15,10 @@ QEMU_MODE=0
 [ "$1" = "--qemu" ] && QEMU_MODE=1
 
 echo "==> Building squashfs..."
-sudo mksquashfs rootfs/ pi-flash/rootfs.squash -comp zstd -noappend
+sudo mksquashfs rootfs/ pi-flash/rootfs.squash -comp zstd -noappend -all-root
 
 echo "==> Signing..."
-HASH=$(sha256sum rootfs.squash | cut -d' ' -f1)
+HASH=$(sha256sum pi-flash/rootfs.squash | cut -d' ' -f1)
 printf '%s' "$HASH" > /tmp/hash.bin
 SIG=$(openssl pkeyutl -sign -inkey keys/signing.key -rawin -in /tmp/hash.bin | base64 -w0)
 rm /tmp/hash.bin

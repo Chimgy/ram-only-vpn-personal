@@ -114,10 +114,6 @@ mount -t devpts devpts /dev/pts 2>/dev/null || log "devpts already mounted"
 log "Starting SSH..."
 /usr/sbin/sshd && log "SSH ready — ssh root@$MY_IP" || log "WARNING: SSH failed to start"
 
-/usr/sbin/sshd \
-    && log "SSH ready — ssh root@$MY_IP" \
-    || log "WARNING: SSH failed to start"
-
 # Step 7: ready
 log "========================================="
 log "VPN SERVER READY"
