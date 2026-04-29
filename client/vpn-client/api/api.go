@@ -8,7 +8,10 @@ import (
 )
 
 // THIS IS NOT DYNAMIC RN HAVE TO CHANGE BEFORE EVERY SINGLE BUILD
-const baseURL = "http://192.168.1.111:8080"
+const baseURL = "http://192.168.1.107:8080"
+
+// This is set within vpn-boot.sh and here for now before i figure out a more secure method for holding this
+const apiKey = "test123"
 
 type PeerResponse struct {
 	TunnelIP       string `json:"tunnel_ip"`
@@ -21,7 +24,10 @@ func Connect(publicKey, userID string) (PeerResponse, error) {
 		"public_key": publicKey,
 		"user_id":    userID,
 	})
-	resp, err := http.Post(baseURL+"/peer", "application/json", bytes.NewReader(body))
+	req, _ := http.NewRequest(http.MethodPost, baseURL+"/peer", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", apiKey)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return PeerResponse{}, fmt.Errorf("POST /peer: %w", err)
 	}
@@ -40,6 +46,7 @@ func Disconnect(publicKey string) error {
 	body, _ := json.Marshal(map[string]string{"public_key": publicKey})
 	req, _ := http.NewRequest(http.MethodDelete, baseURL+"/peer", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", apiKey)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("DELETE /peer: %w", err)

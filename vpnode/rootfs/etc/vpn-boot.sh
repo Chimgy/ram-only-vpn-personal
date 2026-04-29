@@ -12,15 +12,15 @@
 #   QEMU:  eth0 or enp0s1 depending on virtio-net-device naming
 #          check with: ip link show
 
-log()  { echo "[vpn-boot] $*"; }
+log() { echo "[vpn-boot] $*"; }
 fail() { log "ERROR: $*"; exit 1; }
 
 # Step 1: network
 log "Bringing up network..."
 ip link set eth0 up || fail "Failed to bring up eth0"
-udhcpc -i eth0 -q   || fail "DHCP failed"
+udhcpc -i eth0 -q || fail "DHCP failed"
 MY_IP=$(ip addr show eth0 | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
-log "Network up — $MY_IP"
+log "Network up: $MY_IP"
 
 # sync clock so timestamps don't think its 1970....
 log "Syncing clock... actaully nah"
@@ -66,10 +66,10 @@ chmod 600 /run/wg/wg0.conf
 
 # Step 4: bring up WireGuard
 log "Bringing up WireGuard server..."
-ip link add dev wg0 type wireguard    || fail "Failed to create wg0"
-ip address add 10.8.0.1/24 dev wg0   || fail "Failed to assign tunnel IP"
-wg setconf wg0 /run/wg/wg0.conf      || fail "Failed to configure wg0"
-ip link set up dev wg0               || fail "Failed to bring up wg0"
+ip link add dev wg0 type wireguard || fail "Failed to create wg0"
+ip address add 10.8.0.1/24 dev wg0 || fail "Failed to assign tunnel IP"
+wg setconf wg0 /run/wg/wg0.conf || fail "Failed to configure wg0"
+ip link set up dev wg0 || fail "Failed to bring up wg0"
 log "WireGuard listening on port 51820"
 
 # Step 5: IP forwarding and NAT
@@ -80,19 +80,17 @@ log "WireGuard listening on port 51820"
 log "Enabling IP forwarding and NAT..."
 echo 1 > /proc/sys/net/ipv4/ip_forward
 
-/usr/sbin/iptables -t nat -A POSTROUTING \
-    -s 10.8.0.0/24 -o eth0 -j MASQUERADE
-
+/usr/sbin/iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth0 -j MASQUERADE
 /usr/sbin/iptables -A FORWARD -i wg0 -j ACCEPT
-
-/usr/sbin/iptables -A FORWARD \
-    -i eth0 -o wg0 -m state --state RELATED,ESTABLISHED -j ACCEPT
+/usr/sbin/iptables -A FORWARD -i eth0 -o wg0 -m state --state RELATED,ESTABLISHED -j ACCEPT
 
 log "NAT configured"
 
 # Step 6: Run the n-api go file that will handle dynamic connections
-export VPN_LAN_IP=$MY_IP  # still needed for ssh
-export NODE_API_KEY=<some-secret-you-set>  # THIS IS AN IMPORTANT LINE LOL
+# still needed for ssh
+export VPN_LAN_IP=$MY_IP
+# THIS IS AN IMPORTANT LINE LOL
+export NODE_API_KEY=test123
 /usr/local/bin/n-api &
 
 # Step 6: SSH
@@ -112,7 +110,7 @@ mount -t devpts devpts /dev/pts 2>/dev/null || log "devpts already mounted"
 
 # 3. Start SSH with debug flags if you want to see why it fails in logs
 log "Starting SSH..."
-/usr/sbin/sshd && log "SSH ready — ssh root@$MY_IP" || log "WARNING: SSH failed to start"
+/usr/sbin/sshd && log "SSH ready: ssh root@$MY_IP" || log "WARNING: SSH failed to start"
 
 # Step 7: ready
 log "========================================="
