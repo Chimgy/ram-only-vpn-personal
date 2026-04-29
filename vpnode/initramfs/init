@@ -86,6 +86,13 @@ printf '%s' "$ACTUAL_HASH"             > /tmp/hash.txt
 
 rm -f /tmp/ospkg.sig /tmp/hash.txt
 
+# Before swapping and deleting:
+# Setting fallback date to OS image timestamp (genius ik)
+log "Setting fallback date from OS image timestamp..."
+OS_IMAGE_TIME=$(stat -c %Y /mnt/boot/rootfs.squash)
+date -s "@$OS_IMAGE_TIME"
+log "Clock set to build time: $(date)"
+
 # Step 4: overlay filesystem
 # squashfs (read-only, verified) -> lower layer
 # tmpfs    (read-write, RAM) -> upper layer

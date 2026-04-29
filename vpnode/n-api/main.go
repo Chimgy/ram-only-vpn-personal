@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"n-api/authCrypto"
 	"n-api/peerpool"
 	"n-api/wg"
 )
@@ -34,17 +36,42 @@ type errorResponse struct {
 }
 
 func getPublicIP() string {
-	resp, err := http.Get("https://ifconfig.me")
+	// try 5 times because pi can be slow to boot
+	for i := 0; i < 5; i++ {
+		// Golang is so cool (it will find the ca-certs for us)
+		resp, err := http.Get("https://ifconfig.me/ip")
+		if err != nil {
+			log.Printf("Attemp %d: network not ready, retrying...", i+1)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		defer resp.Body.Close()
+
+		ip, err := io.ReadAll(resp.Body)
+		if err == nil {
+			return strings.TrimSpace(string(ip))
+		}
+	}
+	return "unavailable"
+}
+
+// DUCKDNS required for dynamic ips otherwise just set ur baseURL to the static one in vpn-client/api-go
+func updateDuckDNS() {
+	token := os.Getenv("DUCKDNS_TOKEN")
+	domain := os.Getenv("DUCKDNS_DOMAIN")
+	if token == "" || domain == "" {
+		log.Println("DuckDns env vars not set, skipping update...")
+		return
+	}
+
+	url := fmt.Sprintf("https://www.duckdns.org/update?domains=%s&token=%s", domain, token)
+	resp, err := http.Get(url)
 	if err != nil {
-		log.Printf("WARNING: could not fetch public IP: %v", err)
-		return "unavailable"
+		log.Printf("DuckDNS update failed: %v", err)
+		return
 	}
 	defer resp.Body.Close()
-	ip, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "unavailable"
-	}
-	return strings.TrimSpace(string(ip))
+	log.Println("DuckDNS updated successfully")
 }
 
 // Helpers
@@ -75,7 +102,7 @@ func handleAddPeer(w http.ResponseWriter, r *http.Request, publicIP string) {
 		return
 	}
 
-	// Assign tunnel IP (idempotent — same pubkey gets same IP)
+	// Assign tunnel IP (idempotent same pubkey gets same IP)
 	tunnelIP, err := pool.Assign(req.PublicKey)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
@@ -121,13 +148,52 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func apiKeyMiddleware(next http.HandlerFunc) http.HandlerFunc {
+// Encrypts the api-key sent on intial connection, the node + client will use pre-shared keys
+// and decrypt internally to verify. Sniffers will only see random numbers on initial connection (both sides)
+func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	apiKey := os.Getenv("NODE_API_KEY")
+	if apiKey == "" {
+		log.Fatal("NODE_API_KEY not set")
+	}
+	// grab key baked into node for comparison
+	cryptoKey := authCrypto.DeriveKey(apiKey)
+
+	// Send only 404 header (rather than using the go net/http error for extra stealth)
+
 	return func(w http.ResponseWriter, r *http.Request) {
-		apiKey := os.Getenv("NODE_API_KEY")
-		if apiKey != "" && r.Header.Get("X-API-Key") != apiKey {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
+		// DECRYPT SENDER KEY & VERIFY
+		// read it:
+		encryptedBody, err := io.ReadAll(r.Body)
+		// Any errors or no key silent drop
+
+		// using hijacker kills tcp quicker then port scrapers can fingerprint (usually)
+		if err != nil || len(encryptedBody) == 0 {
+			if hj, ok := w.(http.Hijacker); ok {
+				conn, _, _ := hj.Hijack()
+				conn.Close() // Kill the TCP connection immediately
+				return
+			}
+			// if hijack fails
+			w.WriteHeader(http.StatusNotFound)
 			return
 		}
+
+		// verify it:
+		plaintext, err := authCrypto.Decrypt(encryptedBody, cryptoKey)
+		if err != nil {
+			if hj, ok := w.(http.Hijacker); ok {
+				conn, _, _ := hj.Hijack()
+				conn.Close()
+				return
+			}
+			// silent drop (wrong key or bad data)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		// put plaintext back into the requestbody (now decrypted) for next handler to use (addPeer etc)
+		r.Body = io.NopCloser(bytes.NewBuffer(plaintext))
+
 		next(w, r)
 	}
 }
@@ -187,10 +253,11 @@ func handleListPeers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GET /health
-func handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
+// // GET /health
+// // IMPORTANT: THIS IS UNPROTECTED FOR TROUBLESHOOTING LEAVE COMMENTED IF NOT USING
+// func handleHealth(w http.ResponseWriter, r *http.Request) {
+// 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+// }
 
 // startReaper polls WireGuard handshake times and reaps silent peers
 func startReaper(ttl, interval time.Duration) {
@@ -239,7 +306,7 @@ func main() {
 		port = "8080"
 	}
 
-	http.HandleFunc("/peer", corsMiddleware(apiKeyMiddleware(func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/peer", authMiddleware(corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
 			handleAddPeer(w, r, publicIP)
@@ -250,8 +317,8 @@ func main() {
 		}
 	})))
 
-	http.HandleFunc("/peers", corsMiddleware(apiKeyMiddleware(handleListPeers)))
-	http.HandleFunc("/health", corsMiddleware(apiKeyMiddleware(handleHealth)))
+	http.HandleFunc("/peers", authMiddleware(corsMiddleware(handleListPeers)))
+	// http.HandleFunc("/health", corsMiddleware(handleHealth))
 
 	log.Printf("vpnode-api listening on :%s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))

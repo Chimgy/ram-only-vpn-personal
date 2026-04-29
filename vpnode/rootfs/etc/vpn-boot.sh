@@ -22,9 +22,14 @@ udhcpc -i eth0 -q || fail "DHCP failed"
 MY_IP=$(ip addr show eth0 | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
 log "Network up: $MY_IP"
 
-# sync clock so timestamps don't think its 1970....
-log "Syncing clock... actaully nah"
-# ntpd -d -q -n -p pool.ntp.org && log "Clock synced" || log "WARNING: NTP failed"
+# DNS needed for ifconfig.me
+log "Configuring DNS..."
+echo "nameserver 8.8.8.8" > /etc/resolv.conf
+echo "nameserver 1.1.1.1" >> /etc/resolv.conf
+
+# Now sync clock so timestamps don't think its 1970....
+log "Syncing clock via NTP..."
+ntpd -n -q -p pool.ntp.org && log "Clock synced via NTP" || log "WARNING: NTP failed. Using Fallback Date"
 
 # Step 2: WireGuard keypair into RAM
 # Fresh keypair generated every boot

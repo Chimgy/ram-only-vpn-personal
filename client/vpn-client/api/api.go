@@ -5,12 +5,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"vpn-client/authCrypto"
 )
 
-// THIS IS NOT DYNAMIC RN HAVE TO CHANGE BEFORE EVERY SINGLE BUILD
-const baseURL = "http://192.168.1.107:8080"
+// // LAN OPTION:
+// const baseURL = "http://<IP.OF.YOUR.PI>:8080"
+// DUCKDNS Option (Default) for dynamic IP's
+const baseURL = "http://ram-only-vpn.duckdns.org:8080"
 
-// This is set within vpn-boot.sh and here for now before i figure out a more secure method for holding this
+// Static IP option / or if you have dynamic just change everytime
+// const baseURL = "http://<static.or.dynamic.ip>:8080"
+
+// IP option
+
+// This is set within vpn-boot.sh and here. This is just a personal version so I honestly don't see the need to make it more l33t
 const apiKey = "test123"
 
 type PeerResponse struct {
@@ -20,40 +29,57 @@ type PeerResponse struct {
 }
 
 func Connect(publicKey, userID string) (PeerResponse, error) {
-	body, _ := json.Marshal(map[string]string{
+	data, _ := json.Marshal(map[string]string{
 		"public_key": publicKey,
 		"user_id":    userID,
 	})
-	req, _ := http.NewRequest(http.MethodPost, baseURL+"/peer", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", apiKey)
+
+	// Encrypt the JSON (its being sent over http)
+	key := authCrypto.DeriveKey(apiKey)
+	encryptedData, _ := authCrypto.Encrypt(data, key)
+
+	// Post the encrypted bytes
+	req, _ := http.NewRequest(http.MethodPost, baseURL+"/peer", bytes.NewReader(encryptedData))
+	req.Header.Set("Content-Type", "application/octet-stream")
+
 	resp, err := http.DefaultClient.Do(req)
+
+	// handle response ()
 	if err != nil {
-		return PeerResponse{}, fmt.Errorf("POST /peer: %w", err)
+		return PeerResponse{}, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return PeerResponse{}, fmt.Errorf("authentication failed or node not found (404)")
+	}
+
 	if resp.StatusCode != http.StatusOK {
-		return PeerResponse{}, fmt.Errorf("server returned %d", resp.StatusCode)
+		return PeerResponse{}, fmt.Errorf("server error: %d", resp.StatusCode)
 	}
+
 	var pr PeerResponse
-	if err := json.NewDecoder(resp.Body).Decode(&pr); err != nil {
-		return PeerResponse{}, fmt.Errorf("decoding response: %w", err)
-	}
-	return pr, nil
+	err = json.NewDecoder(resp.Body).Decode(&pr)
+	return pr, err
 }
 
 func Disconnect(publicKey string) error {
-	body, _ := json.Marshal(map[string]string{"public_key": publicKey})
-	req, _ := http.NewRequest(http.MethodDelete, baseURL+"/peer", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", apiKey)
+	// same method of encryption to disconnect
+	data, _ := json.Marshal(map[string]string{"public_key": publicKey})
+	key := authCrypto.DeriveKey(apiKey)
+	encryptedData, _ := authCrypto.Encrypt(data, key)
+
+	req, _ := http.NewRequest(http.MethodDelete, baseURL+"/peer", bytes.NewReader(encryptedData))
+	req.Header.Set("Content-Type", "application/octet-stream")
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("DELETE /peer: %w", err)
+		return err // due to the 8080 connection silent dropping 404 will always be the result
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("server returned %d", resp.StatusCode)
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to disconnect: %d", resp.StatusCode)
 	}
 	return nil
 }
