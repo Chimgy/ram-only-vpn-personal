@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -56,6 +57,16 @@ func Up(privateKey, tunnelIP, serverPubkey, serverEndpoint string) error {
 	if err := ensureDll(); err != nil {
 		return err
 	}
+
+	// Resolve endpoint before passing to wireguard
+	host, port, _ := net.SplitHostPort(serverEndpoint)
+	ips, _ := net.LookupIP(host)
+	if len(ips) == 0 {
+		return fmt.Errorf("Could not resolve %s", host)
+	}
+	// without doing this explicitly wireguard tries to parse the whole "endpoint=domain.duck.dns.org:port"
+	resolvedEndpoint := net.JoinHostPort(ips[0].String(), port)
+
 	// Create the Wintun adapter
 	// requires Administrator rights (handled by wails.json)
 	interfaceName := "VPNClient"
@@ -68,8 +79,11 @@ func Up(privateKey, tunnelIP, serverPubkey, serverEndpoint string) error {
 
 	logger := device.NewLogger(device.LogLevelSilent, "[VPN] ")
 	dev := device.NewDevice(tunDevice, conn.NewDefaultBind(), logger)
+
+	// save this to global so Down() can access it
 	activeDevice = dev
 
+	// convert keys from base64 to hex for IpcSet
 	privHex, err := b64ToHex(privateKey)
 	if err != nil {
 		return fmt.Errorf("invalid private key: %w", err)
@@ -79,12 +93,12 @@ func Up(privateKey, tunnelIP, serverPubkey, serverEndpoint string) error {
 		return fmt.Errorf("invalid server pubkey: %w", err)
 	}
 
-	// apply the conf
+	// apply the conf with resolved endpoint  \n doesnt work for UAPI parser sigh
 	uapiConf := fmt.Sprintf(`private_key=%s
 public_key=%s
 endpoint=%s
-allowed_ips=0.0.0.0/0
-`, privHex, pubHex, serverEndpoint)
+allowed_ip=0.0.0.0/0
+`, privHex, pubHex, resolvedEndpoint)
 
 	err = dev.IpcSet(uapiConf)
 	if err != nil {

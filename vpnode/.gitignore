@@ -18,3 +18,7 @@ rootfs/etc/n-api/*
 # ── Misc ─────────────────────────────────────────────────────────
 *.save
 
+# go build arch dependent artifacts:
+frontend/wailsjs/
+frontend/package-lock.json
+frontend/package.json.md5
