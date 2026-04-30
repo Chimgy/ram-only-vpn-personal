@@ -12,12 +12,10 @@ import (
 // // LAN OPTION:
 // const baseURL = "http://<IP.OF.YOUR.PI>:8080"
 // DUCKDNS Option (Default) for dynamic IP's
-const baseURL = "http://ram-only-vpn.duckdns.org:8080"
+const baseURL = "http://ramonlyvpn.duckdns.org:8080"
 
 // Static IP option / or if you have dynamic just change everytime
 // const baseURL = "http://<static.or.dynamic.ip>:8080"
-
-// IP option
 
 // This is set within vpn-boot.sh and here. This is just a personal version so I honestly don't see the need to make it more l33t
 const apiKey = "test123"

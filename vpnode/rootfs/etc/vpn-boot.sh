@@ -95,7 +95,6 @@ log "NAT configured"
 # still needed for ssh
 export VPN_LAN_IP=$MY_IP
 # THIS IS AN IMPORTANT LINE LOL
-export NODE_API_KEY=test123
 /usr/local/bin/n-api &
 
 # Step 6: SSH

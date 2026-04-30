@@ -16,6 +16,50 @@ import (
 	"n-api/wg"
 )
 
+// check and load in crucial config for connections
+type Config struct {
+	APIKey    string
+	DuckToken string
+	Domain    string
+	Port      string
+}
+
+// global var to clean up code
+var cfg Config
+
+// need to parse /etc/n-api/config.env
+func loadEnvFile(filename string) {
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return // file doesnt exist
+	}
+	for _, line := range strings.Split(string(content), "\n") {
+		pair := strings.SplitN(line, "=", 2)
+		if len(pair) == 2 {
+			os.Setenv(strings.TrimSpace(pair[0]), strings.TrimSpace(pair[1]))
+		}
+	}
+}
+
+func loadConfig() {
+	loadEnvFile("/etc/n-api/config.env")
+	cfg = Config{
+		APIKey:    os.Getenv("NODE_API_KEY"),
+		DuckToken: os.Getenv("DUCKDNS_TOKEN"),
+		Domain:    os.Getenv("DUCKDNS_DOMAIN"),
+		Port:      os.Getenv("API_PORT"),
+	}
+	if cfg.DuckToken == "" || cfg.Domain == "" {
+		log.Println("WARNING: Missing DuckDNS environment variables")
+	}
+	if cfg.APIKey == "" {
+		log.Fatal("NODE_API_KEY not set")
+	}
+	if cfg.Port == "" {
+		cfg.Port = "8080"
+	}
+}
+
 var pool *peerpool.Pool
 
 // Request/response types
@@ -36,18 +80,18 @@ type errorResponse struct {
 }
 
 func getPublicIP() string {
+	client := &http.Client{Timeout: 5 * time.Second}
 	// try 5 times because pi can be slow to boot
 	for i := 0; i < 5; i++ {
 		// Golang is so cool (it will find the ca-certs for us)
-		resp, err := http.Get("https://ifconfig.me/ip")
+		resp, err := client.Get("https://ifconfig.me/ip")
 		if err != nil {
 			log.Printf("Attemp %d: network not ready, retrying...", i+1)
 			time.Sleep(2 * time.Second)
 			continue
 		}
-		defer resp.Body.Close()
-
 		ip, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
 		if err == nil {
 			return strings.TrimSpace(string(ip))
 		}
@@ -57,21 +101,37 @@ func getPublicIP() string {
 
 // DUCKDNS required for dynamic ips otherwise just set ur baseURL to the static one in vpn-client/api-go
 func updateDuckDNS() {
-	token := os.Getenv("DUCKDNS_TOKEN")
-	domain := os.Getenv("DUCKDNS_DOMAIN")
-	if token == "" || domain == "" {
+	// Create a client because if http.Get() gets stuck it will wait forever apparently
+	var client = &http.Client{
+		Timeout: time.Second * 10,
+	}
+
+	if cfg.DuckToken == "" || cfg.Domain == "" {
 		log.Println("DuckDns env vars not set, skipping update...")
 		return
 	}
 
-	url := fmt.Sprintf("https://www.duckdns.org/update?domains=%s&token=%s", domain, token)
-	resp, err := http.Get(url)
+	url := fmt.Sprintf("https://www.duckdns.org/update?domains=%s&token=%s", cfg.Domain, cfg.DuckToken)
+	resp, err := client.Get(url)
 	if err != nil {
 		log.Printf("DuckDNS update failed: %v", err)
 		return
 	}
 	defer resp.Body.Close()
 	log.Println("DuckDNS updated successfully")
+}
+
+// Duckdns needs to be updated every now and again if you have a dynamic ip
+func startDNSHeartbeat(interval time.Duration) {
+	go func() {
+		// initially update immediately on start up
+		updateDuckDNS()
+
+		for range time.Tick(interval) {
+			updateDuckDNS()
+		}
+	}()
+	log.Printf("DNS Heartbeat started: interval=%v", interval)
 }
 
 // Helpers
@@ -126,10 +186,15 @@ func handleAddPeer(w http.ResponseWriter, r *http.Request, publicIP string) {
 
 	log.Printf("Peer added: user=%s pubkey=%s tunnel=%s", req.UserID, req.PublicKey[:8]+"...", tunnelIP)
 
+	endpoint := fmt.Sprintf("%s.duckdns.org:51820", cfg.Domain)
+	if cfg.Domain == "" {
+		endpoint = "SET_YOUR_STATIC_IP_HERE:51820"
+	}
+
 	writeJSON(w, http.StatusOK, addPeerResponse{
 		TunnelIP:       tunnelIP.String(),
 		ServerPubkey:   serverPubkey,
-		ServerEndpoint: fmt.Sprintf("%s:51820", publicIP),
+		ServerEndpoint: endpoint,
 	})
 }
 
@@ -151,12 +216,9 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 // Encrypts the api-key sent on intial connection, the node + client will use pre-shared keys
 // and decrypt internally to verify. Sniffers will only see random numbers on initial connection (both sides)
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	apiKey := os.Getenv("NODE_API_KEY")
-	if apiKey == "" {
-		log.Fatal("NODE_API_KEY not set")
-	}
+
 	// grab key baked into node for comparison
-	cryptoKey := authCrypto.DeriveKey(apiKey)
+	cryptoKey := authCrypto.DeriveKey(cfg.APIKey)
 
 	// Send only 404 header (rather than using the go net/http error for extra stealth)
 
@@ -217,44 +279,45 @@ func handleRemovePeer(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 }
 
-// GET /peers — debug endpoint, shows active peers + pool status
-// Now will also show wg handshkae timestamps
-func handleListPeers(w http.ResponseWriter, r *http.Request) {
-	peers := pool.List()
+// ------------------------- DEBUG ENDPOINTS ---------------------------
+// (leave commented if not using because they arent wrapped in auth
+// // GET /peers debug endpoint, shows active peers + pool status
+// // Now will also show wg handshkae timestamps
+// func handleListPeers(w http.ResponseWriter, r *http.Request) {
+// 	peers := pool.List()
 
-	statuses, _ := wg.ShowDump()
-	hsMap := make(map[string]time.Time)
-	for _, s := range statuses {
-		hsMap[s.PublicKey] = s.LastHandshake
-	}
+// 	statuses, _ := wg.ShowDump()
+// 	hsMap := make(map[string]time.Time)
+// 	for _, s := range statuses {
+// 		hsMap[s.PublicKey] = s.LastHandshake
+// 	}
 
-	type enrichedPeer struct {
-		PublicKey     string `json:"public_key"`
-		TunnelIP      string `json:"tunnel_ip"`
-		LastHandshake string `json:"last_handshake"`
-	}
+// 	type enrichedPeer struct {
+// 		PublicKey     string `json:"public_key"`
+// 		TunnelIP      string `json:"tunnel_ip"`
+// 		LastHandshake string `json:"last_handshake"`
+// 	}
 
-	enriched := make([]enrichedPeer, 0, len(peers))
-	for _, p := range peers {
-		hs := "never"
-		if t, ok := hsMap[p.PublicKey]; ok && !t.IsZero() {
-			hs = t.UTC().Format(time.RFC3339)
-		}
-		enriched = append(enriched, enrichedPeer{
-			PublicKey:     p.PublicKey,
-			TunnelIP:      p.TunnelIP.String(),
-			LastHandshake: hs,
-		})
-	}
+// 	enriched := make([]enrichedPeer, 0, len(peers))
+// 	for _, p := range peers {
+// 		hs := "never"
+// 		if t, ok := hsMap[p.PublicKey]; ok && !t.IsZero() {
+// 			hs = t.UTC().Format(time.RFC3339)
+// 		}
+// 		enriched = append(enriched, enrichedPeer{
+// 			PublicKey:     p.PublicKey,
+// 			TunnelIP:      p.TunnelIP.String(),
+// 			LastHandshake: hs,
+// 		})
+// 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"active":    enriched,
-		"available": pool.Available(),
-	})
-}
+// 	writeJSON(w, http.StatusOK, map[string]any{
+// 		"active":    enriched,
+// 		"available": pool.Available(),
+// 	})
+// }
 
 // // GET /health
-// // IMPORTANT: THIS IS UNPROTECTED FOR TROUBLESHOOTING LEAVE COMMENTED IF NOT USING
 // func handleHealth(w http.ResponseWriter, r *http.Request) {
 // 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 // }
@@ -289,8 +352,11 @@ func startReaper(ttl, interval time.Duration) {
 }
 
 func main() {
+	loadConfig()
+
 	publicIP := getPublicIP()
 	log.Printf("Public IP: %s", publicIP)
+
 	var err error
 	// Pool: 10.8.0.2 — 10.8.0.50 (48 concurrent peers, expand as needed)
 	pool, err = peerpool.New(2, 50)
@@ -301,9 +367,9 @@ func main() {
 	// reap peers silent for 3 minutes, check every 30 seconds
 	startReaper(3*time.Minute, 30*time.Second)
 
-	port := os.Getenv("API_PORT")
-	if port == "" {
-		port = "8080"
+	// Refresh DNS every (30) minutes
+	if cfg.DuckToken != "" && cfg.Domain != "" {
+		startDNSHeartbeat(15 * time.Minute)
 	}
 
 	http.HandleFunc("/peer", authMiddleware(corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
@@ -317,9 +383,10 @@ func main() {
 		}
 	})))
 
-	http.HandleFunc("/peers", authMiddleware(corsMiddleware(handleListPeers)))
+	// Debug Endpoints:
+	// http.HandleFunc("/peers", corsMiddleware(handleListPeers))
 	// http.HandleFunc("/health", corsMiddleware(handleHealth))
 
-	log.Printf("vpnode-api listening on :%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Printf("vpnode-api listening on :%s", cfg.Port)
+	log.Fatal(http.ListenAndServe(":"+cfg.Port, nil))
 }
