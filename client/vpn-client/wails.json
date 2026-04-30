@@ -9,5 +9,10 @@
   "author": {
     "name": "chimgy",
     "email": "charliejmarshall1234@gmail.com"
+  },
+  "windows": {
+    "info": {
+      "requestedExecutionLevel": "requireAdministrator"
+    }
   }
 }
