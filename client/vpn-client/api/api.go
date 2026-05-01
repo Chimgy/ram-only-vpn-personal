@@ -9,27 +9,15 @@ import (
 	"vpn-client/authCrypto"
 )
 
-// // LAN OPTION:
-// const baseURL = "http://<IP.OF.YOUR.PI>:8080"
-// DUCKDNS Option (Default) for dynamic IP's
-const baseURL = "http://ramonlyvpn.duckdns.org:8080"
-
-// Static IP option / or if you have dynamic just change everytime
-// const baseURL = "http://<static.or.dynamic.ip>:8080"
-
-// This is set within vpn-boot.sh and here. This is just a personal version so I honestly don't see the need to make it more l33t
-const apiKey = "test123"
-
 type PeerResponse struct {
 	TunnelIP       string `json:"tunnel_ip"`
 	ServerPubkey   string `json:"server_pubkey"`
 	ServerEndpoint string `json:"server_endpoint"`
 }
 
-func Connect(publicKey, userID string) (PeerResponse, error) {
+func Connect(publicKey, apiKey, baseURL string) (PeerResponse, error) {
 	data, _ := json.Marshal(map[string]string{
 		"public_key": publicKey,
-		"user_id":    userID,
 	})
 
 	// Encrypt the JSON (its being sent over http)
@@ -61,7 +49,7 @@ func Connect(publicKey, userID string) (PeerResponse, error) {
 	return pr, err
 }
 
-func Disconnect(publicKey string) error {
+func Disconnect(publicKey, apiKey, baseURL string) error {
 	// same method of encryption to disconnect
 	data, _ := json.Marshal(map[string]string{"public_key": publicKey})
 	key := authCrypto.DeriveKey(apiKey)

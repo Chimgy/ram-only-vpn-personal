@@ -7,10 +7,12 @@ interface Status { connected: boolean; tunnelIP: string }
 
 interface Props {
   status: Status;
-  userID: string;
+  apiKey: string;
+  baseURL: string;
   loading: boolean;
   error: string;
-  onUserIDChange: (v: string) => void;
+  onApiKeyChange: (v: string) => void;
+  onBaseURLChange: (v: string) => void;
   onConnect: () => void;
   onDisconnect: () => void;
 }
@@ -18,7 +20,7 @@ interface Props {
 const CONTENT_FADE = "transition-opacity duration-[1000ms]";
 
 export default function ConnectionCard({
-  status, userID, loading, error, onUserIDChange, onConnect, onDisconnect
+  status, apiKey, baseURL, loading, error, onApiKeyChange, onBaseURLChange, onConnect, onDisconnect
 }: Props) {
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
@@ -172,17 +174,26 @@ export default function ConnectionCard({
             </div>
           </div>
 
-          {/* User ID input */}
+          {/* Connection inputs */}
           {!status.connected && (
             <div
-              className={CONTENT_FADE}
+              className={`flex flex-col gap-2 ${CONTENT_FADE}`}
               style={{ opacity: isCleared ? 1 : 0 }}
             >
               <input
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder-white/30 outline-none focus:border-indigo-500/60 focus:bg-white/8 transition"
-                placeholder="User ID"
-                value={userID}
-                onChange={e => onUserIDChange(e.target.value)}
+                placeholder="Node URL"
+                value={baseURL}
+                onChange={e => onBaseURLChange(e.target.value)}
+                onFocus={onInputFocus}
+                disabled={loading}
+              />
+              <input
+                type="password"
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder-white/30 outline-none focus:border-indigo-500/60 focus:bg-white/8 transition"
+                placeholder="API Key"
+                value={apiKey}
+                onChange={e => onApiKeyChange(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && onConnect()}
                 onFocus={onInputFocus}
                 disabled={loading}

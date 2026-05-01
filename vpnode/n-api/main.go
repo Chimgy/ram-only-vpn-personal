@@ -66,7 +66,6 @@ var pool *peerpool.Pool
 
 type addPeerRequest struct {
 	PublicKey string `json:"public_key"`
-	UserID    string `json:"user_id"`
 }
 
 type addPeerResponse struct {
@@ -184,7 +183,7 @@ func handleAddPeer(w http.ResponseWriter, r *http.Request, publicIP string) {
 		serverPubkey = "unavailable"
 	}
 
-	log.Printf("Peer added: user=%s pubkey=%s tunnel=%s", req.UserID, req.PublicKey[:8]+"...", tunnelIP)
+	log.Printf("Peer added: user=%s pubkey=%s tunnel=%s", req.PublicKey[:8]+"...", tunnelIP)
 
 	endpoint := fmt.Sprintf("%s.duckdns.org:51820", cfg.Domain)
 	if cfg.Domain == "" {

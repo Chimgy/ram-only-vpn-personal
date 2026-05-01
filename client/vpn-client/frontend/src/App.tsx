@@ -9,7 +9,8 @@ type Result = { ok: boolean; tunnelIP: string; error: string };
 export default function App() {
   const rootRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<Status>({ connected: false, tunnelIP: '' });
-  const [userID, setUserID] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [baseURL, setBaseURL] = useState(() => localStorage.getItem('vpn_base_url') ?? 'http://ramonlyvpn.duckdns.org:8080');
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState('');
 
@@ -32,10 +33,15 @@ export default function App() {
     return () => { window.removeEventListener('mousemove', handler); cancelAnimationFrame(rafId); };
   }, []);
 
+  function handleBaseURLChange(v: string) {
+    setBaseURL(v);
+    localStorage.setItem('vpn_base_url', v);
+  }
+
   async function handleConnect() {
-    if (!userID.trim()) { setError('Enter a user ID'); return; }
+    if (!apiKey.trim()) { setError('Enter an API key'); return; }
     setLoading(true); setError('');
-    const res: Result = await Connect(userID.trim());
+    const res: Result = await Connect(apiKey.trim(), baseURL.trim());
     if (res.ok) setStatus({ connected: true, tunnelIP: res.tunnelIP });
     else setError(res.error);
     setLoading(false);
@@ -65,10 +71,12 @@ export default function App() {
       <div className="relative z-30 min-h-screen flex items-center justify-center pointer-events-none">
         <ConnectionCard
           status={status}
-          userID={userID}
+          apiKey={apiKey}
+          baseURL={baseURL}
           loading={loading}
           error={error}
-          onUserIDChange={setUserID}
+          onApiKeyChange={setApiKey}
+          onBaseURLChange={handleBaseURLChange}
           onConnect={handleConnect}
           onDisconnect={handleDisconnect}
         />
