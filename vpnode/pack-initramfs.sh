@@ -13,7 +13,7 @@ echo "==> Packing initramfs..."
 cd initramfs
 
 # 2. Force creation of mount points just in case they were missing
-mkdir -p proc sys dev mnt tmp
+mkdir -p proc sys dev mnt mnt/squash mnt/newroot tmp lib
 
 # 3. Pack it
 # --null + -print0: Handles weird characters/spaces

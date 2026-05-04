@@ -100,6 +100,7 @@ log "Clock set to build time: $(date)"
 #         squashfs is never modified, SD card remains untouched
 #         reboot = clean slate, all runtime state gone
 
+mkdir -p /mnt/squash /mnt/newroot
 mount -t squashfs -o loop,ro /mnt/boot/rootfs.squash /mnt/squash \
     && log "squashfs mounted" || panic "squashfs mount failed"
 

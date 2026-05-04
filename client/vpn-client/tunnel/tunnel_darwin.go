@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 )
 
 const confPath = "/tmp/vpnclient.conf"
@@ -18,19 +17,16 @@ func wgQuickPath() string {
 	return "/opt/homebrew/bin/wg-quick"
 }
 
-// wgEnv returns the current environment with Homebrew prepended to PATH.
-// GUI apps on macOS inherit a minimal PATH that excludes /opt/homebrew/bin,
-// so wg-quick (a bash script) would fall back to /bin/bash (3.2) — but
-// wg-quick requires bash 4+.
-func wgEnv() []string {
-	newPath := "/opt/homebrew/bin:/usr/local/bin:" + os.Getenv("PATH")
-	env := make([]string, 0, len(os.Environ()))
-	for _, e := range os.Environ() {
-		if !strings.HasPrefix(e, "PATH=") {
-			env = append(env, e)
+// wgBash returns the Homebrew bash 4+ path.
+// macOS ships bash 3.2 at /bin/bash; wg-quick requires 4+.
+// Checks Apple Silicon path first, then Intel.
+func wgBash() string {
+	for _, p := range []string{"/opt/homebrew/bin/bash", "/usr/local/bin/bash"} {
+		if _, err := os.Stat(p); err == nil {
+			return p
 		}
 	}
-	return append(env, "PATH="+newPath)
+	return "/bin/bash"
 }
 
 func Up(privateKey, tunnelIP, serverPubkey, serverEndpoint string) error {
@@ -49,9 +45,7 @@ PersistentKeepalive = 25
 	if err := os.WriteFile(confPath, []byte(conf), 0600); err != nil {
 		return fmt.Errorf("writing wg config: %w", err)
 	}
-	cmd := exec.Command("sudo", "-E", wgQuickPath(), "up", confPath)
-	cmd.Env = wgEnv()
-	out, err := cmd.CombinedOutput()
+	out, err := exec.Command("sudo", wgBash(), wgQuickPath(), "up", confPath).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("wg-quick up: %s: %w", string(out), err)
 	}
@@ -59,9 +53,7 @@ PersistentKeepalive = 25
 }
 
 func Down() error {
-	cmd := exec.Command("sudo", "-E", wgQuickPath(), "down", confPath)
-	cmd.Env = wgEnv()
-	out, err := cmd.CombinedOutput()
+	out, err := exec.Command("sudo", wgBash(), wgQuickPath(), "down", confPath).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("wg-quick down: %s: %w", string(out), err)
 	}

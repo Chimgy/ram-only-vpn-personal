@@ -203,13 +203,16 @@ func pullDockerImage() {
 func runBuildContainer(c cfg) {
 	step("Running build container (this may take a few minutes on first run)...")
 
-	outputDir, err := filepath.Abs("vpn-node-output")
+	exe, err := os.Executable()
 	if err != nil {
-		fatalf("could not resolve output path: %v", err)
+		fatalf("could not resolve executable path: %v", err)
 	}
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	outputDir := filepath.Join(filepath.Dir(exe), "vpn-node-output")
+	_ = os.RemoveAll(outputDir)
+	if err := os.MkdirAll(outputDir, 0777); err != nil {
 		fatalf("create output dir: %v", err)
 	}
+	_ = os.Chmod(outputDir, 0777)
 
 	args := []string{
 		"run", "--rm",

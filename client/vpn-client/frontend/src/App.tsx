@@ -10,7 +10,7 @@ export default function App() {
   const rootRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<Status>({ connected: false, tunnelIP: '' });
   const [apiKey, setApiKey] = useState('');
-  const [baseURL, setBaseURL] = useState(() => localStorage.getItem('vpn_base_url') ?? 'http://ramonlyvpn.duckdns.org:8080');
+  const [baseURL, setBaseURL] = useState(() => localStorage.getItem('vpn_base_url') ?? '');
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState('');
 
