@@ -34,7 +34,10 @@ type ConnectResult struct {
 
 func NewApp() *App { return &App{} }
 
-func (a *App) startup(ctx context.Context) { a.ctx = ctx }
+func (a *App) startup(ctx context.Context) {
+	a.ctx = ctx
+	_ = tunnel.EnsurePrivileges()
+}
 
 func (a *App) Connect(apiKey, baseURL string) ConnectResult {
 	a.mu.Lock()
