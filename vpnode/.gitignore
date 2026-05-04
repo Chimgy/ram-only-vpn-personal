@@ -15,6 +15,9 @@ rootfs/etc/shadow
 rootfs/etc/ssh/ssh_host_*
 rootfs/etc/n-api/*
 
+# ── Kernel source tree - built locally, never commit ─────────────
+linux/
+
 # ── Misc ─────────────────────────────────────────────────────────
 *.save
 

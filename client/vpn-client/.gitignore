@@ -1,3 +1,10 @@
 build/bin
 node_modules
 frontend/dist
+
+# packaging outputs — built by build.sh, never commit
+packaging/linux/usr/local/bin/vpn-client
+packaging/mac/root/Applications/vpn-client.app
+packaging/mac/components.plist
+packaging/vpn-client.deb
+packaging/vpn-client.pkg
