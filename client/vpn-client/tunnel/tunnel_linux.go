@@ -14,7 +14,6 @@ func Up(privateKey, tunnelIP, serverPubkey, serverEndpoint string) error {
 	conf := fmt.Sprintf(`[Interface]
 PrivateKey = %s
 Address = %s/24
-DNS = 1.1.1.1, 8.8.8.8
 
 [Peer]
 PublicKey = %s
