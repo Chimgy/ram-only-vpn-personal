@@ -1,0 +1,6 @@
+linux/
+.git/
+installer/vpn-setup
+installer/vpn-setup.exe
+installer/vpn-setup-linux
+installer/vpn-setup-mac

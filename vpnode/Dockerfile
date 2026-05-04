@@ -21,3 +21,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
+COPY . /build/
+RUN chmod +x /build/*.sh /build/installer/docker-build.sh /build/initramfs/init 2>/dev/null || true
+
+ENTRYPOINT ["/bin/bash", "/build/installer/docker-build.sh"]

@@ -1,0 +1,19 @@
+#!/bin/bash
+# Runs as root automatically after pkg install.
+# Sets up passwordless sudo for wg-quick so the GUI app can bring tunnels up/down.
+
+WG_QUICK=$(which wg-quick 2>/dev/null || echo "")
+
+if [ -z "$WG_QUICK" ]; then
+    # wireguard-tools not installed yet — write a placeholder pointing at the
+    # default Homebrew path so the rule is ready when they install it.
+    WG_QUICK="/opt/homebrew/bin/wg-quick"
+fi
+
+SUDOERS_FILE="/etc/sudoers.d/vpnclient"
+
+printf 'ALL ALL=(root) NOPASSWD: %s up /tmp/vpnclient.conf\n' "$WG_QUICK" > "$SUDOERS_FILE"
+printf 'ALL ALL=(root) NOPASSWD: %s down /tmp/vpnclient.conf\n' "$WG_QUICK" >> "$SUDOERS_FILE"
+chmod 440 "$SUDOERS_FILE"
+
+exit 0

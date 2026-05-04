@@ -20,35 +20,18 @@ type cfg struct {
 	duckToken  string
 	staticIP   string
 	apiKey     string
-	sshPass    string // collected but not yet wired up — see docker-build.sh TODO
+	sshPass    string
 }
 
 func main() {
-	vpnodeDir := findVpnodeDir()
-
 	printBanner()
 	checkDocker()
 	checkWireGuard()
 
 	c := runWizard()
-	writeConfigEnv(vpnodeDir, c)
 	pullDockerImage()
-	runBuildContainer(vpnodeDir, c)
+	runBuildContainer(c)
 	printCompletion(c)
-}
-
-// findVpnodeDir ensures the installer is run from the vpnode/ directory.
-func findVpnodeDir() string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		fatalf("could not get working directory: %v", err)
-	}
-	for _, d := range []string{"rootfs", "n-api", "pi-flash", "installer"} {
-		if _, err := os.Stat(filepath.Join(cwd, d)); err != nil {
-			fatalf("run vpn-setup from the vpnode/ directory (missing %s/)", d)
-		}
-	}
-	return cwd
 }
 
 func printBanner() {
@@ -158,7 +141,7 @@ func runWizard() cfg {
 				Validate(notEmpty("API key")),
 		),
 
-		// Step 4: SSH password (implementation pending — see docker-build.sh)
+		// Step 4: SSH password
 		huh.NewGroup(
 			huh.NewInput().
 				Title("SSH Password (optional)").
@@ -207,29 +190,6 @@ func buildSummary(c *cfg) string {
 	return sb.String()
 }
 
-func writeConfigEnv(vpnodeDir string, c cfg) {
-	dir := filepath.Join(vpnodeDir, "rootfs", "etc", "n-api")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		fatalf("create n-api config dir: %v", err)
-	}
-
-	var lines []string
-	lines = append(lines, "NODE_API_KEY="+c.apiKey)
-	lines = append(lines, "API_PORT=8080")
-	if c.ipType == "dynamic" {
-		lines = append(lines, "DUCKDNS_TOKEN="+c.duckToken)
-		lines = append(lines, "DUCKDNS_DOMAIN="+c.duckDomain)
-	} else {
-		lines = append(lines, "STATIC_IP="+c.staticIP)
-	}
-
-	path := filepath.Join(dir, "config.env")
-	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0600); err != nil {
-		fatalf("write config.env: %v", err)
-	}
-	fmt.Println("==> Wrote rootfs/etc/n-api/config.env")
-}
-
 func pullDockerImage() {
 	step("Pulling build environment from Docker Hub...")
 	cmd := exec.Command("docker", "pull", dockerImage)
@@ -240,18 +200,33 @@ func pullDockerImage() {
 	}
 }
 
-func runBuildContainer(vpnodeDir string, c cfg) {
-	step("Running build container (kernel compilation: ~20-30 min on first run, fast after)...")
+func runBuildContainer(c cfg) {
+	step("Running build container (this may take a few minutes on first run)...")
+
+	outputDir, err := filepath.Abs("vpn-node-output")
+	if err != nil {
+		fatalf("could not resolve output path: %v", err)
+	}
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		fatalf("create output dir: %v", err)
+	}
 
 	args := []string{
 		"run", "--rm",
-		"-v", vpnodeDir + ":/build",
+		"-v", outputDir + ":/output",
+		"-e", "CLIENT_OS=" + runtime.GOOS,
+		"-e", "NODE_API_KEY=" + c.apiKey,
 	}
-	args = append(args, "-e", "CLIENT_OS="+runtime.GOOS)
+	if c.ipType == "dynamic" {
+		args = append(args, "-e", "DUCKDNS_TOKEN="+c.duckToken)
+		args = append(args, "-e", "DUCKDNS_DOMAIN="+c.duckDomain)
+	} else {
+		args = append(args, "-e", "STATIC_IP="+c.staticIP)
+	}
 	if c.sshPass != "" {
 		args = append(args, "-e", "SSH_PASS="+c.sshPass)
 	}
-	args = append(args, dockerImage, "/bin/bash", "/build/installer/docker-build.sh")
+	args = append(args, dockerImage)
 
 	cmd := exec.Command("docker", args...)
 	cmd.Stdout = os.Stdout
@@ -268,8 +243,7 @@ func printCompletion(c cfg) {
 	fmt.Println()
 	fmt.Println(title.Render("✓ Build complete"))
 	fmt.Println()
-	fmt.Println("pi-flash/  — copy ALL files to the root of a FAT32 SD card and boot your Pi.")
-	fmt.Println("output/    — your VPN client app, ready to install on this machine.")
+	fmt.Println("vpn-node-output/pi-flash/  — copy ALL files to the root of a FAT32 SD card and boot your Pi.")
 	fmt.Println()
 
 	fmt.Println(key.Render("PORT FORWARDING"))

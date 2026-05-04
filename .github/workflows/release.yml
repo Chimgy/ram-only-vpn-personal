@@ -9,8 +9,30 @@ permissions:
   contents: write
 
 jobs:
+  # ── Docker image: bake vpnode source into the builder image ───────────
+  build-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: vpnode
+          push: true
+          tags: |
+            churlee/vpn-node-builder:latest
+            churlee/vpn-node-builder:${{ github.ref_name }}
+
   # ── vpn-setup: cross-compile all platforms from one Linux runner ──────
   build-installer:
+    needs: build-docker
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,11 +62,11 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            output: vpn-client.exe
+            artifact: vpn-client.exe
           - os: ubuntu-latest
-            output: vpn-client-linux
+            artifact: vpn-client.deb
           - os: macos-latest
-            output: vpn-client-mac
+            artifact: vpn-client.pkg
 
     runs-on: ${{ matrix.os }}
 
@@ -68,32 +90,54 @@ jobs:
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
 
-      - name: Build
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
         working-directory: client/vpn-client
-        run: |
-          if [ "${{ runner.os }}" = "macOS" ]; then
-            wails build -clean -platform darwin/universal
-          else
-            wails build -clean
-          fi
+        run: wails build -clean
 
-      - name: Rename output
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        working-directory: client/vpn-client
+        run: wails build -clean
+
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        working-directory: client/vpn-client
+        run: wails build -clean -platform darwin/universal
+
+      - name: Package .deb (Linux)
+        if: runner.os == 'Linux'
+        working-directory: client/vpn-client/packaging
+        run: |
+          chmod +x build.sh linux/DEBIAN/postinst
+          ./build.sh
+
+      - name: Package .pkg (macOS)
+        if: runner.os == 'macOS'
+        working-directory: client/vpn-client/packaging
+        run: |
+          chmod +x build.sh mac/scripts/postinstall
+          ./build.sh
+
+      - name: Collect artifact
         shell: bash
         run: |
           if [ "${{ runner.os }}" = "Windows" ]; then
-            mv client/vpn-client/build/bin/vpn-client.exe ${{ matrix.output }}
+            mv client/vpn-client/build/bin/vpn-client.exe vpn-client.exe
+          elif [ "${{ runner.os }}" = "Linux" ]; then
+            mv client/vpn-client/packaging/vpn-client.deb vpn-client.deb
           else
-            mv client/vpn-client/build/bin/vpn-client ${{ matrix.output }}
+            mv client/vpn-client/packaging/vpn-client.pkg vpn-client.pkg
           fi
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.output }}
-          path: ${{ matrix.output }}
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
 
   # ── Upload everything to the GitHub Release ───────────────────────────
   release:
-    needs: [build-installer, build-client]
+    needs: [build-docker, build-installer, build-client]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -107,5 +151,5 @@ jobs:
             vpn-setup-linux
             vpn-setup-mac
             vpn-client.exe
-            vpn-client-linux
-            vpn-client-mac
+            vpn-client.deb
+            vpn-client.pkg

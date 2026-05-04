@@ -1,12 +1,29 @@
 #!/bin/bash
 # Runs inside the vpn-node-builder Docker container.
-# The vpnode/ directory is mounted at /build.
+# Source files are baked into the image at /build.
+# Output is written to /output (mounted from the host).
 set -e
 
-# Strip Windows CRLF from all shell scripts — handles repos checked out on Windows
+# Strip Windows CRLF from all shell scripts
 find /build -name "*.sh" | xargs sed -i 's/\r$//'
 
 cd /build
+
+# ── Write node config from env vars ──────────────────────────────────
+echo "==> Writing node config..."
+mkdir -p /build/rootfs/etc/n-api
+{
+    echo "NODE_API_KEY=${NODE_API_KEY}"
+    echo "API_PORT=8080"
+    if [ -n "${DUCKDNS_TOKEN:-}" ]; then
+        echo "DUCKDNS_TOKEN=${DUCKDNS_TOKEN}"
+        echo "DUCKDNS_DOMAIN=${DUCKDNS_DOMAIN}"
+    fi
+    if [ -n "${STATIC_IP:-}" ]; then
+        echo "STATIC_IP=${STATIC_IP}"
+    fi
+} > /build/rootfs/etc/n-api/config.env
+chmod 600 /build/rootfs/etc/n-api/config.env
 
 # ── Kernel (pre-built, downloaded from GitHub Releases) ──────────────
 mkdir -p pi-flash
@@ -30,47 +47,25 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o ../rootfs/usr/local/bin/n-api 
 cd ..
 echo "==> n-api binary written to rootfs/usr/local/bin/n-api"
 
-# ── Signing keys (one-time) ──────────────────────────────────────────
-if [ ! -f keys/signing.key ]; then
-    echo "==> Generating signing keypair..."
-    ./keygen.sh
-fi
+# ── Signing keys ──────────────────────────────────────────────────────
+echo "==> Generating signing keypair..."
+./keygen.sh
 
 # ── Initramfs ────────────────────────────────────────────────────────
 echo "==> Packing initramfs..."
 ./pack-initramfs.sh
 
-# ── SSH password ─────────────────────────────────────────────────────
-# TODO: implement SSH password setup
-# SSH_PASS env var is available here when the user sets one in the wizard.
-# Uncomment and test when ready:
-#
-# if [ -n "${SSH_PASS:-}" ]; then
-#     HASH=$(openssl passwd -6 "$SSH_PASS")
-#     printf 'root:%s:0:0:99999:7:::\n' "$HASH" > rootfs/etc/shadow
-#     echo "==> SSH password configured"
-# fi
-
 # ── Rootfs ───────────────────────────────────────────────────────────
 echo "==> Building and signing rootfs..."
 ./rebuild.sh
 
-# ── Client app ───────────────────────────────────────────────────────
-echo "==> Downloading vpn-client for ${CLIENT_OS}..."
-mkdir -p /build/output
-case "${CLIENT_OS}" in
-  windows) CLIENT_FILE="vpn-client.exe" ;;
-  darwin)  CLIENT_FILE="vpn-client-mac" ;;
-  *)       CLIENT_FILE="vpn-client-linux" ;;
-esac
-curl -fL --progress-bar \
-    -o "/build/output/${CLIENT_FILE}" \
-    "https://github.com/Chimgy/ram-only-vpn-personal/releases/latest/download/${CLIENT_FILE}"
-echo "==> Client written to output/${CLIENT_FILE}"
+# ── Copy output to /output (mounted from host) ────────────────────────
+echo "==> Copying output..."
+mkdir -p /output
+cp -r /build/pi-flash /output/pi-flash
 
 echo ""
 echo "========================================="
 echo " Build complete."
-echo " pi-flash/  — flash to SD card"
-echo " output/    — install on your machine"
+echo " pi-flash/  — flash ALL files to a FAT32 SD card"
 echo "========================================="
