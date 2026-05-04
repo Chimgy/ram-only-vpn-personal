@@ -21,6 +21,7 @@ type Config struct {
 	APIKey    string
 	DuckToken string
 	Domain    string
+	StaticIP  string
 	Port      string
 }
 
@@ -47,10 +48,11 @@ func loadConfig() {
 		APIKey:    os.Getenv("NODE_API_KEY"),
 		DuckToken: os.Getenv("DUCKDNS_TOKEN"),
 		Domain:    os.Getenv("DUCKDNS_DOMAIN"),
+		StaticIP:  os.Getenv("STATIC_IP"),
 		Port:      os.Getenv("API_PORT"),
 	}
-	if cfg.DuckToken == "" || cfg.Domain == "" {
-		log.Println("WARNING: Missing DuckDNS environment variables")
+	if cfg.Domain == "" && cfg.StaticIP == "" {
+		log.Println("WARNING: Neither DuckDNS domain nor STATIC_IP set — clients won't receive a valid endpoint")
 	}
 	if cfg.APIKey == "" {
 		log.Fatal("NODE_API_KEY not set")
@@ -185,9 +187,14 @@ func handleAddPeer(w http.ResponseWriter, r *http.Request, publicIP string) {
 
 	log.Printf("Peer added: user=%s pubkey=%s tunnel=%s", req.PublicKey[:8]+"...", tunnelIP)
 
-	endpoint := fmt.Sprintf("%s.duckdns.org:51820", cfg.Domain)
-	if cfg.Domain == "" {
-		endpoint = "SET_YOUR_STATIC_IP_HERE:51820"
+	var endpoint string
+	switch {
+	case cfg.Domain != "":
+		endpoint = fmt.Sprintf("%s.duckdns.org:51820", cfg.Domain)
+	case cfg.StaticIP != "":
+		endpoint = fmt.Sprintf("%s:51820", cfg.StaticIP)
+	default:
+		endpoint = "UNCONFIGURED:51820"
 	}
 
 	writeJSON(w, http.StatusOK, addPeerResponse{
