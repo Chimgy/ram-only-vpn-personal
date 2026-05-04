@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/charmbracelet/huh"
@@ -27,6 +28,7 @@ func main() {
 
 	printBanner()
 	checkDocker()
+	checkWireGuard()
 
 	c := runWizard()
 	writeConfigEnv(vpnodeDir, c)
@@ -58,6 +60,36 @@ func printBanner() {
 		Padding(0, 2)
 	fmt.Println()
 	fmt.Println(style.Render("  RAM-Only VPN Node — Setup Wizard  "))
+	fmt.Println()
+}
+
+func checkWireGuard() {
+	if runtime.GOOS != "darwin" {
+		return
+	}
+	if _, err := exec.LookPath("wg-quick"); err == nil {
+		return
+	}
+	fmt.Print("wg-quick not found — required for the VPN client on macOS... ")
+	if _, err := exec.LookPath("brew"); err == nil {
+		fmt.Println("installing via Homebrew...")
+		cmd := exec.Command("brew", "install", "wireguard-tools")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Println()
+			fmt.Println("brew install failed. Run manually: brew install wireguard-tools")
+			os.Exit(1)
+		}
+		fmt.Println("wg-quick installed.")
+	} else {
+		fmt.Println("Homebrew not found.")
+		fmt.Println()
+		fmt.Println("Install Homebrew first:")
+		fmt.Println(`  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`)
+		fmt.Println("Then re-run the installer.")
+		os.Exit(1)
+	}
 	fmt.Println()
 }
 
@@ -213,10 +245,9 @@ func runBuildContainer(vpnodeDir string, c cfg) {
 
 	args := []string{
 		"run", "--rm",
-		"--platform", "linux/amd64",
 		"-v", vpnodeDir + ":/build",
 	}
-	// SSH_PASS is wired up here for when docker-build.sh TODO is implemented
+	args = append(args, "-e", "CLIENT_OS="+runtime.GOOS)
 	if c.sshPass != "" {
 		args = append(args, "-e", "SSH_PASS="+c.sshPass)
 	}
@@ -235,9 +266,10 @@ func printCompletion(c cfg) {
 	key := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("220"))
 
 	fmt.Println()
-	fmt.Println(title.Render("✓ pi-flash/ is ready to flash"))
+	fmt.Println(title.Render("✓ Build complete"))
 	fmt.Println()
-	fmt.Println("Copy ALL files from pi-flash/ to the root of a FAT32 SD card and boot your Pi.")
+	fmt.Println("pi-flash/  — copy ALL files to the root of a FAT32 SD card and boot your Pi.")
+	fmt.Println("output/    — your VPN client app, ready to install on this machine.")
 	fmt.Println()
 
 	fmt.Println(key.Render("PORT FORWARDING"))

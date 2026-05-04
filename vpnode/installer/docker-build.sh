@@ -14,10 +14,10 @@ if [ ! -f pi-flash/kernel8.img ] || [ ! -f pi-flash/bcm2712-rpi-5-b.dtb ]; then
     echo "==> Downloading pre-built kernel from GitHub Releases..."
     curl -fL --progress-bar \
         -o pi-flash/kernel8.img \
-        "https://github.com/Chimgy/ram-only-vpn-personal/releases/latest/download/kernel8.img"
+        "https://github.com/Chimgy/ram-only-vpn-personal/releases/download/v1.0.0/kernel8.img"
     curl -fL --progress-bar \
         -o pi-flash/bcm2712-rpi-5-b.dtb \
-        "https://github.com/Chimgy/ram-only-vpn-personal/releases/latest/download/bcm2712-rpi-5-b.dtb"
+        "https://github.com/Chimgy/ram-only-vpn-personal/releases/download/v1.0.0/bcm2712-rpi-5-b.dtb"
     echo "==> Kernel downloaded"
 else
     echo "==> Kernel already present in pi-flash/, skipping download"
@@ -55,7 +55,22 @@ echo "==> Packing initramfs..."
 echo "==> Building and signing rootfs..."
 ./rebuild.sh
 
+# ── Client app ───────────────────────────────────────────────────────
+echo "==> Downloading vpn-client for ${CLIENT_OS}..."
+mkdir -p /build/output
+case "${CLIENT_OS}" in
+  windows) CLIENT_FILE="vpn-client.exe" ;;
+  darwin)  CLIENT_FILE="vpn-client-mac" ;;
+  *)       CLIENT_FILE="vpn-client-linux" ;;
+esac
+curl -fL --progress-bar \
+    -o "/build/output/${CLIENT_FILE}" \
+    "https://github.com/Chimgy/ram-only-vpn-personal/releases/latest/download/${CLIENT_FILE}"
+echo "==> Client written to output/${CLIENT_FILE}"
+
 echo ""
 echo "========================================="
-echo " Build complete. pi-flash/ is ready."
+echo " Build complete."
+echo " pi-flash/  — flash to SD card"
+echo " output/    — install on your machine"
 echo "========================================="
